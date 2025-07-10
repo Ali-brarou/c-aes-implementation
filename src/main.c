@@ -56,5 +56,13 @@ int main(void)
     }
     puts("\n"); 
 
+    AES_decrypt(&context, test_out, test_in, 32); 
+    puts("this is decrypted input buffer : "); 
+    for (int i = 0; i < 32; i++)
+    {
+        printf("%02X", test_in[i]); 
+    }
+    puts("\n"); 
+
     return 0; 
 }
