@@ -1,6 +1,6 @@
 TARGET = aes
 CC = gcc
-CFLAGS = -Wall -Wextra
+CFLAGS = -Wall -Wextra -O2
 
 all: $(TARGET)
 

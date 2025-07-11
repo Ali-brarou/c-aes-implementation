@@ -255,19 +255,48 @@ static void AES_block_decrypt(const uint8_t* in, uint8_t* out, const uint8_t* ro
     AES_add_round_key(0, out, round_keys);
 }
 
+static void AES_block_xor(uint8_t* target, const uint8_t* src)
+{
+    for (uint8_t i = 0; i < AES_BLOCK_SIZE; i++)
+    {
+        target[i] ^= src[i]; 
+    }
+}
+
 void AES_ctx_init(AES_ctx* context, AES_mode mode, const uint8_t* key)
 {
+    /* sanity check */ 
+    if (!context || !key)
+        return; 
+
     memset(context, 0, sizeof(AES_ctx)); 
 
     context->mode = mode; 
     AES_key_expansion(key, context->round_keys); 
 }
 
+void AES_ctx_init_iv(AES_ctx* context, AES_mode mode, const uint8_t* key, const uint8_t* iv)
+{
+    if (!context || !key || !iv)
+        return; 
+
+    memset(context, 0, sizeof(AES_ctx)); 
+
+    context->mode = mode; 
+    AES_key_expansion(key, context->round_keys); 
+    memcpy(context->iv, iv, AES_BLOCK_SIZE); 
+}
+
+void AES_ctx_set_iv(AES_ctx* context, const uint8_t* iv)
+{
+    memcpy(context->iv, iv, AES_BLOCK_SIZE); 
+}
+
 #define CHECK_LEN(len)\
     do {\
         if (!AES_IS_BLOCK_SIZE(len))\
         {\
-            fprintf(stderr, "Error: invalid length size\n");\
+            fprintf(stderr, "Error: invalid length\n");\
             return;\
         }\
     } while (0)
@@ -286,19 +315,50 @@ static void AES_ecb_decrypt(const AES_ctx* ctx, const uint8_t* in, uint8_t* out,
 {
     CHECK_LEN(len); 
 
-    /* encrypt every block independently */ 
     for (size_t i = 0; i < len; i += AES_BLOCK_SIZE)
     {
         AES_block_decrypt(&in[i], &out[i], ctx->round_keys); 
     }
 }
 
-void AES_encrypt(const AES_ctx* ctx, const uint8_t* in, uint8_t* out, size_t len)
+static void AES_cbc_encrypt(AES_ctx* ctx, const uint8_t* in, uint8_t* out, size_t len)
+{
+    CHECK_LEN(len); 
+    uint8_t temp[AES_BLOCK_SIZE]; 
+    const uint8_t* prev = ctx->iv; 
+    for (size_t i = 0; i < len; i += AES_BLOCK_SIZE)
+    {
+        memcpy(temp, &in[i], AES_BLOCK_SIZE); 
+        AES_block_xor(temp, prev); 
+        AES_block_encrypt(temp, &out[i], ctx->round_keys); 
+        prev = &out[i]; 
+    }
+    memcpy(ctx->iv, prev, AES_BLOCK_SIZE);
+}
+
+static void AES_cbc_decrypt(AES_ctx* ctx, const uint8_t* in, uint8_t* out, size_t len)
+{
+    CHECK_LEN(len); 
+
+    const uint8_t* prev = ctx->iv; 
+    for (size_t i = 0; i < len; i += AES_BLOCK_SIZE)
+    {
+        AES_block_decrypt(&in[i], &out[i], ctx->round_keys); 
+        AES_block_xor(&out[i], prev); 
+        prev = &in[i]; 
+    }
+    memcpy(ctx->iv, prev, AES_BLOCK_SIZE);
+}
+
+void AES_encrypt(AES_ctx* ctx, const uint8_t* in, uint8_t* out, size_t len)
 {
     switch (ctx->mode)
     {
         case AES_MODE_ECB: 
             AES_ecb_encrypt(ctx, in, out, len); 
+            break; 
+        case AES_MODE_CBC: 
+            AES_cbc_encrypt(ctx, in, out, len); 
             break; 
         default: 
             fprintf(stderr, "Error: invalid aes mode\n"); 
@@ -306,12 +366,15 @@ void AES_encrypt(const AES_ctx* ctx, const uint8_t* in, uint8_t* out, size_t len
     }
 }
 
-void AES_decrypt(const AES_ctx* ctx, const uint8_t* in, uint8_t* out, size_t len)
+void AES_decrypt(AES_ctx* ctx, const uint8_t* in, uint8_t* out, size_t len)
 {
     switch (ctx->mode)
     {
         case AES_MODE_ECB: 
             AES_ecb_decrypt(ctx, in, out, len); 
+            break; 
+        case AES_MODE_CBC: 
+            AES_cbc_decrypt(ctx, in, out, len); 
             break; 
         default: 
             fprintf(stderr, "Error: invalid aes mode\n"); 
